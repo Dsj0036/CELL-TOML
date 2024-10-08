@@ -1,10 +1,22 @@
 #pragma once
+
+/// 
+/// toml.hpp 
+/// written by jsh
+/// documented by ai.
+/// Provides basic utilities for CELL inspired by .NET
+/// part of the PS3 Framework.
+/// 
+
+
 #include "System.h"
 #include "text_reader.hpp"
 
 namespace System {
 	namespace Serialization {
-		namespace TOML {
+		namespace TOMLANG {
+			static const char* BOOLEAN_TRUE_LITERAL = "true";
+			static const char* BOOLEAN_FALSE_LITERAL = "false";
 			/// <summary>
 			/// Enumeration of possible value kinds.
 			/// </summary>
@@ -15,8 +27,24 @@ namespace System {
 				Integer,
 				String,
 				Array,
+				Double,
 				Unknown,
 			};
+			static const char* TOMLKindToString(Kind x) {
+				switch (x)
+				{
+					RETNAMEOFINCASE(Comment);
+					RETNAMEOFINCASE(Path);
+					RETNAMEOFINCASE(Bool);
+					RETNAMEOFINCASE(Integer);
+					RETNAMEOFINCASE(String);
+					RETNAMEOFINCASE(Array);
+					RETNAMEOFINCASE(Unknown);
+
+				}
+				return "";
+			}
+
 			/// <summary>
 			/// Enumeration of possible result cases.
 			/// </summary>
@@ -41,7 +69,7 @@ namespace System {
 			/// <returns></returns>
 			static const char* TOMLResultCodeToString(TOMLResultStatusCode x) {
 				switch (x) {
-					
+
 					RETNAMEOFINCASE(Overflow);
 					RETNAMEOFINCASE(Sucess);
 					RETNAMEOFINCASE(SucessNowGotoNextLine);
@@ -71,6 +99,12 @@ namespace System {
 					return *this;
 				}
 			};
+			struct TOMLToken {
+				char* contents;
+				int length;
+			};
+
+
 			/// <summary>
 			/// Represents a path pointer who haves a known length in a text pool.
 			/// </summary>
@@ -79,21 +113,15 @@ namespace System {
 				/// [Not trivial] 
 				/// </summary>
 				char* pathName;
-				/// <summary>
-				/// [Not trivial] 
-				/// </summary>
-				int pathLength;
 			public:
 				/// <summary>
 				/// Creates a root path instance
 				/// </summary>
 				PathName() {
 					pathName = nullptr;
-					pathLength = 0;
 				}
 				PathName(char* name, int length) {
 					pathName = name;
-					pathLength = length;
 				}
 				/// <summary>
 				/// Ensures the path is root (null).
@@ -106,31 +134,45 @@ namespace System {
 				/// </summary>
 				/// <param name="buffer"></param>
 				void Output(void* buffer) {
-					Marshal::Clear(buffer, pathLength);
-					Marshal::Copy(pathName, buffer, pathLength);
+					int length = Text::IndexOf(pathName, ']');
+					Marshal::Clear(buffer, length);
+					Marshal::Copy(pathName, buffer, length);
 				}
 				/// <summary>
 				/// [Factory] Build this instance as an root path descriptor.
 				/// </summary>
 				void Build() {
 					pathName = nullptr;
-					pathLength = 0;
 				}
 				/// <summary>
 				/// [Factory] Build this instance as an specified path descriptor. 
 				/// </summary>
 				/// <param name="name">Path token</param>
 				/// <param name="length">Path token length</param>
-				void Build(char* name, int length) {
+				void Build(char* name) {
 					pathName = name;
-					pathLength = length;
 				}
 				/// <summary>
-				/// Length of the path token
+				/// Outputs the path name.
 				/// </summary>
-				/// <returns>Int</returns>
-				int Size() const {
-					return pathLength;
+				/// <param name="buffer">Target buffer</param>
+				/// <returns>True if sucess.</returns>
+				Boolean getPathName(char* buffer) {
+					if (pathName != nullptr && buffer != nullptr) {
+						char* iterator = pathName;
+						int length = 0;
+						while (*iterator != ']' && *iterator != '\n' && *iterator != '\r') {
+							length++;
+							iterator++;
+						}
+						length--;
+						Marshal::Copy(pathName, buffer, length);
+						return true;
+					}
+					return false;
+				}
+				bool Equals(const char* name) const{
+					return safest_compare(this->pathName, name);
 				}
 				/// <summary>
 				/// The position of this path determined by this instance from the root contents.
@@ -149,7 +191,7 @@ namespace System {
 				// [Not trivial] 
 				Kind kind;
 				// [Not trivial] 
-				StringToken token;
+				TOMLToken token;
 				void Output(const char*);
 				/// [generator only]
 				Value() {}
@@ -163,16 +205,18 @@ namespace System {
 				/// </summary>
 				void Build() {
 					kind = Unknown;
-					token = StringToken();
+					token.contents = 0;
+					token.length = 0;
 				}
 				/// <summary>
 				/// Force explicitly data rebuild.
 				/// </summary>
 				/// <param name="kind"></param>
 				/// <param name="token"></param>
-				void Build(Kind kind, StringToken token) {
+				void Build(Kind kind, char* start, int length) {
 					this->kind = kind;
-					this->token = token;
+					this->token.contents = start;
+					this->token.length = length;
 				}
 				/// <summary>
 				/// Clears all the non trivial values of this instance.
@@ -193,14 +237,14 @@ namespace System {
 				/// <summary>
 				/// [Not Trivial] Entry value descriptor
 				/// </summary>
-				Value value; 
+				Value value;
 				/// <summary>
 				/// [Factory] Build specifically this instance
 				/// </summary>
 				/// <param name="path"></param>
 				/// <param name="kind"></param>
 				/// <param name="token"></param>
-				Entry(PathName* path, Kind kind, StringToken token) {
+				Entry(PathName* path, Kind kind, TOMLToken token) {
 					this->path = path;
 					value.kind = kind;
 					value.token = token;
@@ -212,6 +256,24 @@ namespace System {
 					value.Build();
 				}
 				/// <summary>
+				/// Outputs the valuable text of this string.
+				/// </summary>
+				/// <param name="buffer"></param>
+				bool Output(char* buffer) {
+					int index = Text::IndexOf(value.token.contents, '=');
+					if (index != -1) {
+						char * data = value.token.contents + index + 1;
+						while (*data == ' ') {
+							data++;
+						}
+						int ln = Text::LineLength(data);
+						Marshal::Clear(buffer, ln);
+						Marshal::Copy(data, buffer, ln);
+						return true;
+					}
+					return false;
+				}
+				/// <summary>
 				/// Checks if this instance belongs to the document's root path.
 				/// </summary>
 				/// <returns>Boolean</returns>
@@ -220,6 +282,43 @@ namespace System {
 						return path->IsRoot();
 					}
 					return path == nullptr;
+				}
+				int32_t getInt() {
+					char buffer[32];
+					if (!Output(buffer)) {
+						return 0;
+					}
+					signed int value = Int::Parse(buffer);
+					Marshal::Clear(buffer);
+					return value;
+				}
+				double getDecimal() {
+					char buffer[32];
+					if (!Output(buffer)) {
+						return 0.0;
+					}
+					double value = Double::Parse(buffer);
+					Marshal::Clear(buffer);
+					return value;
+				}
+				float getFloat() {
+					char buffer[32];
+					if (!Output(buffer)) {
+						return 0.0f;
+					}
+					float value = Float::Parse(buffer);
+					Marshal::Clear(buffer);
+					return value;
+				}
+				signed char getBoolean() {
+					char buffer[32];
+
+					if (!Output(buffer)) {
+						return 0.0f;
+					}
+					signed char value = Boolean::Parse(buffer);
+					Marshal::Clear(buffer);
+					return value;
 				}
 				/// <summary>
 				/// Clears all the non-trivial values determined by this class.
@@ -235,7 +334,7 @@ namespace System {
 			public:
 				int index;
 				int length;
-				CommentEntry(){}
+				CommentEntry() {}
 				CommentEntry(int c, int l) : index(c), length(l) {}
 				~CommentEntry() {
 					Marshal::Clear(this, sizeof(*this));
@@ -245,44 +344,64 @@ namespace System {
 			/// Represents the main root contents and container of a TOML document.
 			/// </summary>
 			class Root {
+				int idxPaths = 0;
+				int idxEntries = 0;
+				int idxComments = 0;
 			public:
 				/// <summary>
 				/// Factory Initialize
 				/// </summary>
 				Root(no_init) {
-					Contents.Initialize();
-					Paths.Initialize();
 				}
-				Root() = delete;
+				Root() {
+					idxPaths = 0;
+					idxEntries = 0;
+					idxComments = 0;
+				}
+				
+				PathName* Paths;
+				Entry* Entries;
+				CommentEntry* Commentaries;
 				/// <summary>
 				/// The document original data.
 				/// </summary>
 				char* Data;
 				/// <summary>
-				/// The property entries from the original document.
+				/// Get the count of the collected entries.
 				/// </summary>
-				System::Collections::Enumerable<Entry> Contents;
+				/// <returns>integer</returns>
+				int getLength() const{
+					return idxEntries;
+				}
 				/// <summary>
-				/// Comment entry collection of the global ones from the original document.
+				/// Get the count of the collected paths.
 				/// </summary>
-				System::Collections::Enumerable<CommentEntry> Comments;
+				/// <returns>integer</returns>
+				int pathCount()const {
+					return idxPaths;
+				}
 				/// <summary>
-				/// Path collection that is being pointed by the contents array
-				/// [Disposable]
+				/// Get the count of the collected comments.
 				/// </summary>
-				System::Collections::Enumerable<PathName> Paths;
+				/// <returns>integer</returns>
+				int commentCount() const {
+					return idxComments;
+				}
 				/// <summary>
-				/// [Generation only] Register an entry
+				/// Push an entry.
 				/// </summary>
 				/// <param name="entryModelInstance"></param>
 				void AddEntry(Entry entryModelInstance) {
-					Contents.Push(entryModelInstance);
+					//Contents.Push(entryModelInstance);
+					Entries[idxEntries].path = entryModelInstance.path;
+					Entries[idxEntries].value = entryModelInstance.value;
+					idxEntries++;
 				}
 				/// <summary>
 				/// [Generation only] Register an specified entry
 				/// </summary>
 				/// <param name="entryModelInstance"></param>
-				void AddEntry(PathName* path, Kind kind, StringToken token) {
+				void AddEntry(PathName* path, Kind kind, TOMLToken token) {
 					Entry entry(path, kind, token);
 					AddEntry(entry);
 				}
@@ -292,15 +411,33 @@ namespace System {
 				/// <param name="path"></param>
 				/// <param name="kind"></param>
 				/// <param name="token"></param>
-				void AddEntryAndPath(PathName& path, Kind kind, StringToken token) {
-					for (int i = 0; i < Paths.getLength(); i++) {
+				void AddEntryAndPath(PathName& path, Kind kind, TOMLToken token) {
+					for (int i = 0; i < idxPaths; i++) {
 						if (Paths[i].GetContents() == path.GetContents()) {
 							AddEntry(&(Paths[i]), kind, token);
 							return;
 						}
 					}
-					AddEntry(&Paths.Push(path), kind, token);
+					Paths[idxPaths] = path;
+					AddEntry(&Paths[idxPaths], kind, token);
+					idxPaths++;
+				}
+				/// <summary>
+				/// [Generation Only] Register an path if isnt already
+				/// </summary>
+				/// <param name="path"></param>
+				void AddPath(PathName& path) {
+					PathName* iterator = this->Paths;
 
+					for (int i = 0; i < idxPaths; i++) {
+						if (!iterator[i].IsRoot()) {
+
+							if (strncmp(iterator[i].GetContents(), path.GetContents(), Text::IndexOf(iterator[i].GetContents(), ']')) == 0) {
+								return;
+							}
+						}
+					}
+					Paths[idxPaths++] = path;
 				}
 				/// <summary>
 				/// [Generation only] Register an comment
@@ -308,7 +445,9 @@ namespace System {
 				/// <param name="tokenStart"></param>
 				/// <param name="tokenLength"></param>
 				void AddComment(int tokenStart, int tokenLength) {
-					Comments.Push({ tokenStart, tokenLength });
+					Commentaries[idxComments].index = tokenStart;
+					Commentaries[idxComments].length= tokenLength;
+					idxComments++;
 				}
 				/// <summary>
 				/// [Generation only] Set the originary data.
@@ -317,12 +456,22 @@ namespace System {
 				void SetData(char* data) {
 					this->Data = data;
 				}
+				
 				/// <summary>
 				/// Destroy this instance
 				/// </summary>
 				void Destroy() {
-					Contents.~Enumerable();
-					Paths.~Enumerable();
+					delete[] Paths;
+					delete[] Entries;
+					delete[] Commentaries;
+					sys::memset(Commentaries, 0, sizeof(CommentEntry) * idxComments);
+					sys::memset(Paths, 0, sizeof(PathName) * idxPaths);
+					sys::memset(Entries, 0, sizeof(Entry) * idxEntries);
+				}
+				void Initialize(int paths, int entries, int comments) {
+					Paths = new PathName[paths];
+					Entries = new Entry[paths];
+					Commentaries = new CommentEntry[paths];
 				}
 				/// <summary>
 				/// Let him destroy this instance manually.
@@ -334,58 +483,140 @@ namespace System {
 			typedef HResult TOMLHResultOrPtr;
 
 			/// <summary>
-			/// Encapsulates an dynamic instance of an TOML enumeration
-			/// </summary>
+/// Encapsulates a dynamic instance of a TOML enumeration
+/// </summary>
 			class TOML {
 			public:
 				/// <summary>
 				/// Quick factory initialization
 				/// </summary>
-				/// <param name="data"></param>
+				/// <param name="data">Pointer to the raw TOML data</param>
 				TOML(char* data) {
-					Contents.ConstructorInit();
-					Contents->SetData(data);
+					Contents.ConstructorInit();  // Initialize the instance of Root container
+					Contents->SetData(data);     // Set the provided TOML data to the instance
 				}
-				TOML() = delete;
+
 				/// <summary>
-				/// Dynamic and shared instance to the root container.
+				/// Default constructor, no initialization.
+				/// </summary>
+				TOML() {
+
+				}
+
+				/// <summary>
+				/// Dynamic and shared instance of the root container.
 				/// </summary>
 				System::Instance<Root> Contents;
+
 				/// <summary>
-				/// Get the count of the collected entries.
+				/// Get the count of the collected entries within the TOML structure.
 				/// </summary>
-				/// <returns></returns>
+				/// <returns>Number of entries in the TOML</returns>
 				size_t Count() {
 					if (Contents.NotNull()) {
-						return Contents->Contents.getLength();
+						return Contents->getLength();  // Returns the length of the entries in the root container
 					}
+					return 0;
 				}
 				/// <summary>
-				/// Index accessor
+				/// Get the used memory size by the root container of the document contents.
 				/// </summary>
-				/// <param name="index"></param>
-				/// <returns></returns>
-				Entry& operator [](size_t index) const {
-					return Contents->Contents[index];
+				/// <returns>size_t</returns>
+				size_t SizeOf() {
+					return
+						Contents->getLength() * sizeof(Entry) |
+						Contents->commentCount() * sizeof(CommentEntry) |
+						Contents->pathCount() * sizeof(PathName) | 
+						sizeof(Root);
 				}
 				/// <summary>
-				/// Get the original data
+				/// Index accessor to retrieve the entry at a specific index.
 				/// </summary>
-				/// <returns>An nullable char array</returns>
-				char* GetText() const {
-					return Contents->Data;
+				/// <param name="index">Index of the entry</param>
+				/// <returns>A reference to the Entry object at the given index</returns>
+				Entry& operator [](size_t index) {
+					return Contents->Entries[index];  // Access the entry at the specified index
 				}
+
 				/// <summary>
-				/// Destroy this instance
+				/// Get the original text data that was used to initialize the TOML object.
+				/// </summary>
+				/// <returns>Pointer to the raw data (nullable)</returns>
+				char* GetText() {
+					return Contents->Data;  // Return the original data used for parsing
+				}
+
+				/// <summary>
+				/// Find a path by its name within the TOML structure.
+				/// </summary>
+				/// <param name="name">Name of the path to search for</param>
+				/// <returns>Pointer to the matching PathName object or nullptr if not found</returns>
+				PathName* FindPathByName(const char* name) {
+					forIndexIn(Contents->pathCount()) {  // Loop through all paths
+						if (Contents->Paths[i].Equals(name)) {  // Compare names
+							return &Contents->Paths[i];  // Return the matching path
+						}
+					}
+					return nullptr;  // Return null if no path matches
+				}
+
+				/// <summary>
+				/// Find an entry by its full path within the TOML structure.
+				/// </summary>
+				/// <param name="fullpath">Full path string to the entry (e.g., "path/to/entry")</param>
+				/// <returns>Pointer to the matching Entry object or nullptr if not found</returns>
+				Entry* FindEntryByPath(const char* fullpath) {
+					if (!fullpath) {  // Ensure fullpath is valid
+						return nullptr;
+					}
+					if (sys::strlen(fullpath) > 0) {
+						Entry* result = nullptr;
+						if (Text::IndexOf(fullpath, '/') != -1) {  // Check if the path contains a slash (indicating a hierarchical path)
+							char pathBuff[64];
+							char entryName[64];
+							if (Text::SplitLineByKey(fullpath, '/', pathBuff, entryName)) {  // Split the path and entry name
+								for (int i = 0; i < Contents->getLength(); i++) {  // Loop through the entries
+									if (safest_compare(Contents->Entries[i].value.token.contents, entryName) &&
+										Contents->Entries[i].path->Equals(pathBuff)) {
+										result = &Contents->Entries[i];  // Set result if entry and path match
+									}
+								}
+							}
+							Marshal::Clear(pathBuff);  // Clear the buffer for security
+							Marshal::Clear(entryName);
+							return result;  // Return the found entry
+						}
+						else {
+							for (int i = 0; i < Contents->getLength(); i++) {  // If no slash, look for a direct entry match
+								if (safest_compare(Contents->Entries[i].value.token.contents, fullpath)) {
+									result = &Contents->Entries[i];
+								}
+							}
+							return result;  // Return the found entry
+						}
+					}
+					return nullptr;  // Return null if no entry matches
+				}
+
+				/// <summary>
+				/// Destroy this instance of TOML, clearing its contents.
 				/// </summary>
 				void Destroy() {
-					Contents->Destroy();
-					Contents.Destroy();
+					Contents->Destroy();  // Clear the root container
+					Contents.Destroy();   // Destroy the instance itself
 				}
+
+				/// <summary>
+				/// Destructor for TOML instance.
+				/// </summary>
+				~TOML() {
+					__nop();  // No operation, placeholder for any future cleanup
+				};
 			};
 
 			class Parser {
 			public:
+
 				// [Obsolete]
 				template <typename prim>
 				static bool IsFlaggedBy(prim& integerType, uint16_t bits) {
@@ -414,19 +645,19 @@ namespace System {
 				/// <param name="segmentIterator">Data accessor iterator starting after the equal symbol.</param>
 				/// <param name="output">Output structure space for storing resulting analysis if operation completes.</param>
 				/// <returns></returns>
-				static TOMLResultStatus ParseDecimal(size_t startIndex, char* segmentIterator, Value& output) {
+				static TOMLResultStatus ParseDecimal(char* segmentIterator, Value& output) {
 					char* backup = segmentIterator;
 					int numerics = 0;
 					char* floatValuableBegin = nullptr;
 					bool foundDecimalGap = false;
 					while (*segmentIterator && *segmentIterator != '#' && *segmentIterator != '\n') {
 						Char current = *segmentIterator;
-						if ((current.Equals('.') && (!foundDecimalGap)) && numerics == 0){
+						if ((current.Equals('.') && (!foundDecimalGap)) && numerics == 0) {
 							/// ERROR: TEXT CANNOT START WITH DECIMAL GAP.
 							return InvalidFloatFormat;
 						}
 						else if ((current.Equals('.') && (!foundDecimalGap)) && numerics > 0) {
-							foundDecimalGap = true; 
+							foundDecimalGap = true;
 						}
 						else if ((current.Equals('.') && (foundDecimalGap)) && numerics > 0) {
 							return { FloatingPointUnexpectedDecimalGap };
@@ -449,7 +680,7 @@ namespace System {
 						for (int i = 0; i < numerics; i++) {
 							buffer[i] = floatValuableBegin[i];
 						}
-						return Text::couldBeFloatValueRepresentation(buffer, '.', false) ?  Sucess : InvalidFloatFormat;
+						return Text::couldBeFloatValueRepresentation(buffer, '.', false) ? Sucess : InvalidFloatFormat;
 					}
 					return InvalidFloatFormat;
 				}
@@ -460,7 +691,7 @@ namespace System {
 				/// <param name="segmentIterator">Data accessor iterator starting after the equal symbol.</param>
 				/// <param name="output">Output structure space for storing resulting analysis if operation completes.</param>
 				/// <returns></returns>
-				static TOMLResultStatus ParseNumeric(size_t startIndex, char* segmentIterator, Value& output) {
+				static TOMLResultStatus ParseNumeric(char* segmentIterator, Value& output) {
 					char* iterator = segmentIterator;
 					while (*segmentIterator == ' ') {
 						segmentIterator++;
@@ -491,7 +722,7 @@ namespace System {
 						}
 						auto res = Text::couldBeIntegerRepresentation(buffer) ? Sucess : NotValidTryNext;;
 						if (res == Sucess) {
-							output.Build(Kind::Integer, StringToken(startIndex, segmentIterator - iterator));
+							output.Build(Kind::Integer, valuableBegin, numerics);
 						}
 						return res;
 					}
@@ -504,7 +735,7 @@ namespace System {
 				/// <param name="segmentIterator">Data accessor iterator starting after the equal symbol.</param>
 				/// <param name="output">Output structure space for storing resulting analysis if operation completes.</param>
 				/// <returns></returns>
-				static TOMLResultStatus ParseBoolean(size_t startIndex, char* segmentIterator, Value& output) {
+				static TOMLResultStatus ParseBoolean(char* segmentIterator, Value& output) {
 					char* booleanIterator = segmentIterator;
 					char* resultLocation = nullptr;
 					int length = 0;
@@ -535,7 +766,7 @@ namespace System {
 								TrailingSpacesButItsOk++;
 							}
 							else {
-								output.Build(Kind::Bool, StringToken(startIndex, length));
+								output.Build(Kind::Bool, resultLocation, 6);
 								return { Sucess };
 							}
 							phraseEndingCheckIterator++;
@@ -580,7 +811,7 @@ namespace System {
 				/// <summary>
 				/// Parses the valuable equation side of the equation.
 				/// </summary>
-				static HResult ParseEquation(size_t referenceIndex, char* contents, Value& output, TOMLResultStatus * outputResult) {
+				static HResult ParseEquation(char* contents, Value& output, TOMLResultStatus* outputResult) {
 					// Paso 1: encontrar el símbolo de asignación '='
 					char* iterator = contents;
 					bool foundAssignment = false;
@@ -617,24 +848,24 @@ namespace System {
 						*outputResult = stringAnalysis;
 						if (stringAnalysis.StatusCode == Sucess) {
 							/// IN THIS CASE, WE ASSIGNED ALREADY THE LENGTH OF THE RESULT INTO THE RESULT CODE. 
-							output.Build(Kind::String, { referenceIndex, stringAnalysis.Valuable });
+							output.Build(Kind::String, defaultValuableIterator, stringAnalysis.Valuable);
 							return Sucess;
 						}
 						else {
-							TOMLResultStatus booleanAnalysis = ParseBoolean(referenceIndex, booleanIterator, output);
+							TOMLResultStatus booleanAnalysis = ParseBoolean(booleanIterator, output);
 							*outputResult = booleanAnalysis;
 							if (booleanAnalysis.StatusCode == Sucess) {
 								return Sucess;
 							}
 							else {
-								TOMLResultStatus integralAnalysis = ParseNumeric(referenceIndex, integerIterator, output);
+								TOMLResultStatus integralAnalysis = ParseNumeric(integerIterator, output);
 								*outputResult = integralAnalysis;
 								if (integralAnalysis.StatusCode == Sucess) {
 
 									return Sucess;
 								}
 								else {
-									TOMLResultStatus decimalAnalysis = ParseDecimal(referenceIndex, decimalIterator, output);
+									TOMLResultStatus decimalAnalysis = ParseDecimal(decimalIterator, output);
 									*outputResult = decimalAnalysis;
 									if (decimalAnalysis.StatusCode == Sucess) {
 
@@ -662,13 +893,15 @@ namespace System {
 				/// <param name="output">Target resulting output</param>
 				/// <param name="outputStatus">Target resulting status</param>
 				/// <returns></returns>
-				static Kind ParseLine(size_t& ReferenceIndex, char* line, size_t lineLength, Value& output, TOMLResultStatus * outputStatus) {
+				static Kind ParseLine(char* line, size_t lineLength, Value& output, TOMLResultStatus* outputStatus) {
 					if (!line) {
 						return Kind::Unknown;
 					}
 					while (*line == '#') {
 						output.kind = Kind::Comment;
-						output.token = StringToken(ReferenceIndex, lineLength);
+						output.token.contents = line;
+						output.token.length = Text::LineLength(line);
+
 						return Kind::Comment;
 						break;
 					}
@@ -679,75 +912,173 @@ namespace System {
 					}
 					if (*iterator == '[' && *(iterator + lineLength - 1) == ']') {
 						output.kind = Path;
-						output.token = StringToken(ReferenceIndex + 1, lineLength - 1);
+						output.token.contents = iterator + 1; 
+						output.token.length = lineLength - 1;
 						return output.kind;
 					}
 					else {
-						HResult h = ParseEquation(ReferenceIndex, line, output, outputStatus);
+						HResult h = ParseEquation(line, output, outputStatus);
 						if (h == 1 || h == 0) {
 							return output.kind;
 						}
 						return Unknown;
 					}
-					
-				}
-				/// <summary>
-				/// Recognizes and translates all the values into a readable structure instance.
-				/// </summary>
-				/// <param name="content">Accessible text data array</param>
-				/// <param name="length">Length of the text data array</param>
-				/// <returns>[Disposable] Instance of an TOML root.</returns>
-				static TOMLHResultOrPtr Parse(char* content, size_t length) {
-					char* iterator = content;
-					Reader tr{};
-					Entry currentEntry;
-					PathName currentPath;
-					TOML ContentResult	{content};
-					bool rootPath = true;
-					TOMLResultStatus StatusLine(TOMLResultStatusCode::NotValidTryNext, 0);
-					/// INIT RESULT AND MODELS.
-					tr.SetContent(content);
-					while (!tr.IsEof()) {
-						if (rootPath) {
-							currentPath.Build();
-						}
-						/// LAST LINE
-						char* cur = tr.Current();
-						size_t length = 0;
-						/// CURRENT LINE
-						char* line = tr.NextLine(length);
-						while (*(line + 1) == '\n') {
-							line = tr.NextLine(length);
-							rootPath = true;
-						}
-						Value currentVal;
-						/// DISTANCE BETWEEN ORIGIN AND CURRENT
-						size_t index = cur - content;
-						/// PARSE LINE ELEMENT DECLARATION
-						auto kind = ParseLine(index, line, length, currentVal, &StatusLine);
-						if (kind == Path) {
-							rootPath = false;
-							/// UPDATE THE CURRENT PATH FOR THIS ELEMENT AND ALL THE NEXT ONES UNTIL DOUBLE LINE BREAK
-							currentPath.Build(cur + currentVal.token.getStartIndex(), currentVal.token.getCount());
-						}
-						else if (kind == Comment) {
-							ContentResult.Contents->AddComment(currentVal.token.getStartIndex(), currentVal.token.getCount());
-						}
-						else if (
-							kind == (Kind::String) ||
-							kind == (Kind::Array) ||
-							kind == (Kind::Bool) ||
-							kind == (Kind::Integer)) {
 
-							/// LINKS THE CURRENT PATH TO THE NEW ELEMENT AND ADD IT
-							/// IF THE CURRENT PATH DOESNT EXISTS ADDS ITS ALSO
-							ContentResult.Contents->AddEntryAndPath(currentPath, kind, currentVal.token);
+				}
+
+				static Kind GetKindForPairValueString(char* valueString) {
+					int length = Text::LineLength(valueString);
+					int index = 0;
+					while (*valueString == ' ') {
+						index++;
+						valueString++;
+					}
+					if (safest_compare(valueString, BOOLEAN_FALSE_LITERAL) ||
+						safest_compare(valueString, BOOLEAN_TRUE_LITERAL)) {
+						return Kind::Bool;
+					}
+					else {
+						int letters_c = Text::countLettersInLine(valueString);
+						int numbers_c = Text::countNumbersInLine(valueString);
+						int spaces_c = Text::countSpacesInLine(valueString);
+						if (letters_c == 0 && numbers_c > 0) {
+							if (Text::couldBeIntegerRepresentation(valueString)) {
+								return Kind::Integer;
+							}
+							else if (Text::couldBeFloatValueRepresentation(valueString, '.')) {
+								return Kind::Double;
+							}
+						}
+						if (*valueString == '[') {
+							return Kind::Array;
+						}
+						else {
+							char commaEnding = 0;
+							char commaStarting = 0;
+							int textEnd = 0;
+							int textStart = 0;
+							for (int i = length - 1; i > 0; i--) {
+								if (valueString[i] == '"') {
+									commaEnding = '"';
+									textEnd = i;
+									break;
+								}
+								else if (valueString[i] == '\'') {
+									commaEnding = '\'';
+									textEnd = i;
+									break;
+								}
+							}
+							for (int i = 0; i < length; i++) {
+								if (valueString[i] == '"') {
+									commaStarting = '"';
+									textStart = i;
+									break;
+								}
+								else if (valueString[i] == '\'') {
+									commaStarting = '\'';
+									textStart = i;
+									break;
+								}
+							}
+							if (commaEnding == commaStarting && (commaStarting > 0 && commaEnding > 0)) {
+								return Kind::String;
+							}
+							return Kind::Unknown;
 						}
 					}
 
-					
 				}
+
+				static Boolean Parse(char* content, size_t content_length, TOML* toml) {
+					if (!content) {
+						return false;
+					}
+					Reader textReader{};
+					textReader.SetContent(content);
+					int iteratedLines = 0;
+					size_t length = 0;
+					PathName currentPath;
+					TOMLResultStatus statusLine(TOMLResultStatusCode::NullReference, 0);
+					
+					int paths_c = 0;
+					int comments_c = 0;
+					int entries_c = 0;
+
+					while (!textReader.IsEof()) {
+						char* current = textReader.Current();
+						size_t index = current - content;
+						while ((*(current + 1) == '\n' && (*current) == '\n') || (*(current + 1) == '\r' && (*current) == '\r')) {
+							current = textReader.NextLine(length);
+						}
+						while (*current == ' ') {
+							current++;
+						}
+
+						if (*current == '[') {
+							paths_c++;
+						}
+						else if (*current == '#') {
+							comments_c++;
+						}
+						else {
+							entries_c++;
+						}
+						textReader.NextLine(length);
+					}
+					toml->Contents->Initialize(paths_c, entries_c, comments_c);
+
+					textReader.Restart();
+
+
+					while (!textReader.IsEof()) {
+						char* current = textReader.Current();
+						size_t index = current - content;
+						while ((*(current + 1) == '\n' && (*current) == '\n') || (*(current + 1) == '\r' && (*current) == '\r')) {
+							currentPath.Build(); // clear current path.
+							current = textReader.NextLine(length);
+							iteratedLines++;
+						}
+						while (*current == ' ') {
+							current++;
+						}
+						if (*current == '#') {
+							char* commentIterator = current + 1;
+							int length2 = 0;
+							while (Char(*commentIterator).IsLetter() && *commentIterator != '\n' && *commentIterator != '\n') {
+								length2++;
+								commentIterator++;
+							}
+							toml->Contents->AddComment(current - content, length2);
+						}
+						else if (*current == '[') {
+							currentPath.Build(current + 1);
+							toml->Contents->AddPath(currentPath);
+						}
+						else {
+							Value valuable;
+							
+							signed int keyIndex = Text::IndexOf(current, '=');
+							if (keyIndex != -1 && (keyIndex < 0xff)) {
+								char key_str[64];
+								char value_str[64];
+								if (Text::SplitLineByKey(current, '=', key_str, value_str)) {
+									Kind valueKind = GetKindForPairValueString(value_str);
+									toml->Contents->AddEntryAndPath(currentPath, valueKind, { current, Text::LineLength(current)});
+									__nop();
+								}
+								Marshal::Clear(key_str);
+								Marshal::Clear(value_str);
+							}
+
+						}
+						textReader.NextLine(length);
+					}
+					return true;
+				}
+
 			};
 		}
 	}
+	
 }
